@@ -177,7 +177,7 @@ export default function App() {
     }
 
     setSessionSyncing(true);
-    setStatus("Syncing your Firebase session with the backend...");
+    setStatus("Syncing...");
 
     try {
       const session = await syncSession(user);
@@ -486,31 +486,13 @@ export default function App() {
   if (!isAuthenticated) {
     return (
       <main className="auth-screen">
-        <section className="auth-hero">
+        <section className="auth-hero minimal">
           <div className="auth-hero-copy">
             <p className="eyebrow">Smart Photo Cloud</p>
             <h1>Turn raw photos into organized people albums.</h1>
             <p className="lede auth-lede">
               Sign in to open the workspace for uploads, gallery review, and clustered face albums.
             </p>
-          </div>
-
-          <div className="auth-value-list">
-            <div className="auth-value-card">
-              <span className="label">Flow</span>
-              <strong>Upload, process, cluster</strong>
-              <p>One clean pipeline from storage to searchable people albums.</p>
-            </div>
-            <div className="auth-value-card">
-              <span className="label">Detection</span>
-              <strong>MTCNN face extraction</strong>
-              <p>Faces are detected before embeddings are created for clustering.</p>
-            </div>
-            <div className="auth-value-card">
-              <span className="label">Workspace</span>
-              <strong>Separate product views</strong>
-              <p>Authentication stays isolated from the main gallery and people experience.</p>
-            </div>
           </div>
         </section>
 
@@ -547,7 +529,7 @@ export default function App() {
               </div>
             ) : null}
 
-            <div className="auth-stage-grid">
+            <div className="auth-center">
               <form className="auth-form auth-form-card" onSubmit={handleSubmit}>
                 {mode === "register" ? (
                   <label>
@@ -556,7 +538,7 @@ export default function App() {
                       type="text"
                       value={form.name}
                       onChange={(event) => setForm({ ...form, name: event.target.value })}
-                      placeholder="Japmanpreet Singh"
+                      placeholder="Your name"
                     />
                   </label>
                 ) : null}
@@ -597,44 +579,9 @@ export default function App() {
               </form>
 
               <div className="auth-info-stack">
-                <article className="session-card auth-session-card">
-                  <h3>Session Preview</h3>
-                  <p>
-                    <span className="label">Status</span>
-                    <strong>{status}</strong>
-                  </p>
-                  <p>
-                    <span className="label">Firebase user</span>
-                    <strong>{firebaseUser?.email || "Not signed in"}</strong>
-                  </p>
-                  <p>
-                    <span className="label">Workspace link</span>
-                    <strong>{appUser?.id || "Awaiting backend sync"}</strong>
-                  </p>
-                  <p>
-                    <span className="label">API health</span>
-                    <strong>{serviceHealth?.status || "Checking..."}</strong>
-                  </p>
-                  {firebaseUser && !sessionToken ? (
-                    <button
-                      className="secondary-button"
-                      onClick={() => void handleRetrySessionSync()}
-                      type="button"
-                      disabled={sessionSyncing}
-                    >
-                      {sessionSyncing ? "Syncing..." : "Retry Workspace Sync"}
-                    </button>
-                  ) : null}
-                </article>
-
-                <article className="auth-help auth-help-card">
-                  <h4>Firebase Fix</h4>
-                  <p>
-                    If you still see a configuration error, open Firebase Console, go to
-                    Authentication, click <strong>Get started</strong>, then enable
-                    <strong> Email/Password</strong>.
-                  </p>
-                </article>
+                <div className="auth-status">
+                  <span>{status}</span>
+                </div>
               </div>
             </div>
           </article>
@@ -666,7 +613,7 @@ export default function App() {
                 {tab === "people" && "People"}
               </span>
               <span className="tab-caption">
-                {tab === "upload" && "Send photos into AI processing"}
+                {tab === "upload" && "Upload photos"}
                 {tab === "gallery" && "Browse uploaded images"}
                 {tab === "people" && "Review clustered faces"}
               </span>
@@ -674,22 +621,10 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="sidebar-status">
+        <div className="sidebar-status minimal">
           <div className="mini-stat">
-            <span className="label">Status</span>
-            <strong>{status}</strong>
-          </div>
-          <div className="mini-stat">
-            <span className="label">Signed in</span>
+            <span className="label">Signed in as </span>
             <strong>{firebaseUser?.email || "No active user"}</strong>
-          </div>
-          <div className="mini-stat">
-            <span className="label">Workspace</span>
-            <strong>{appUser?.id ? "Backend linked" : "Awaiting session sync"}</strong>
-          </div>
-          <div className="mini-stat">
-            <span className="label">API</span>
-            <strong>{serviceHealth?.status || "Checking..."}</strong>
           </div>
         </div>
       </aside>
@@ -707,11 +642,11 @@ export default function App() {
 
           <div className="topbar-actions">
             <div className="pill">
-              <span className="label">Photos</span>
+              <span className="label">Photos </span>
               <strong>{photos.length}</strong>
             </div>
             <div className="pill">
-              <span className="label">People</span>
+              <span className="label">People </span>
               <strong>{people.length}</strong>
             </div>
             {isAuthenticated ? (
@@ -753,13 +688,13 @@ export default function App() {
 
                 <div className="upload-meta">
                   <div className="mini-stat">
-                    <span className="label">Files</span>
+                    <span className="label">Files </span>
                     <strong>
                       {selectedFiles.length ? `${selectedFiles.length} selected` : "No files selected"}
                     </strong>
                   </div>
                   <div className="mini-stat">
-                    <span className="label">Total size</span>
+                    <span className="label">Total size </span>
                     <strong>
                       {selectedFiles.length
                         ? `${Math.round(selectedFiles.reduce((total, file) => total + file.size, 0) / 1024)} KB`
@@ -767,24 +702,13 @@ export default function App() {
                     </strong>
                   </div>
                 </div>
-
                 <button className="primary-button" type="submit" disabled={!isAuthenticated || uploading}>
                   {uploading ? "Processing..." : "Upload Batch"}
                 </button>
+                <br/>
               </form>
 
               <div className="banner neutral">{uploadMessage}</div>
-            </article>
-
-            <article className="panel">
-              <h3>Pipeline</h3>
-              <ol className="timeline-list">
-                <li>Request a signed Supabase Storage upload URL.</li>
-                <li>Upload the file directly from the browser.</li>
-                <li>Confirm upload completion with the API.</li>
-                <li>Run AI face detection and ResNet embeddings.</li>
-                <li>Persist faces and assign clusters.</li>
-              </ol>
             </article>
           </section>
         ) : null}
