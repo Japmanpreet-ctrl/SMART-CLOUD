@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { config } from "../config.js";
 import { getDb } from "./db.js";
 
 function cosineSimilarity(left, right) {
@@ -15,6 +16,27 @@ function cosineSimilarity(left, right) {
 
   if (!leftNorm || !rightNorm) return -1;
   return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
+}
+
+function parseEmbeddingVector(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => Number(entry));
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+      return [];
+    }
+
+    return trimmed
+      .slice(1, -1)
+      .split(",")
+      .map((entry) => Number(entry.trim()))
+      .filter((entry) => Number.isFinite(entry));
+  }
+
+  return [];
 }
 
 function vectorLiteral(values) {
@@ -109,6 +131,20 @@ export async function listPhotosForCluster(userId, clusterId) {
   return result.rows;
 }
 
+export async function listPhotoSourcesForUser(userId) {
+  const db = getDb();
+  const result = await db.query(
+    `
+      SELECT id, storage_key, file_type
+      FROM photo
+      WHERE user_id = $1
+      ORDER BY upload_date ASC
+    `,
+    [userId],
+  );
+  return result.rows;
+}
+
 export async function renameCluster(userId, clusterId, displayName) {
   const db = getDb();
   const result = await db.query(
@@ -136,12 +172,57 @@ export async function deletePhotoForUser(userId, photoId) {
   return result.rows[0] || null;
 }
 
-async function findBestCluster(client, userId, embedding, threshold = 0.82) {
+export async function resetPeopleAlbumsForUser(userId) {
+  const db = getDb();
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    await client.query(
+      `
+        DELETE FROM face
+        WHERE photo_id IN (
+          SELECT id
+          FROM photo
+          WHERE user_id = $1
+        )
+      `,
+      [userId],
+    );
+
+    await client.query(
+      `
+        DELETE FROM person_cluster
+        WHERE user_id = $1
+      `,
+      [userId],
+    );
+
+    await client.query(
+      `
+        UPDATE photo
+        SET upload_status = 'queued', updated_at = NOW()
+        WHERE user_id = $1
+      `,
+      [userId],
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function findBestCluster(client, userId, embedding, threshold = config.faceClusterThreshold) {
   const result = await client.query(
     `
       SELECT pc.id, f.embedding
       FROM person_cluster pc
-      INNER JOIN face f ON f.id = pc.representative_face_id
+      INNER JOIN face f ON f.cluster_id = pc.id
       WHERE pc.user_id = $1
     `,
     [userId],
@@ -150,7 +231,8 @@ async function findBestCluster(client, userId, embedding, threshold = 0.82) {
   let best = null;
   for (const row of result.rows) {
     if (!row.embedding) continue;
-    const similarity = cosineSimilarity(embedding, row.embedding);
+    const existingEmbedding = parseEmbeddingVector(row.embedding);
+    const similarity = cosineSimilarity(embedding, existingEmbedding);
     if (similarity >= threshold && (!best || similarity > best.similarity)) {
       best = { id: row.id, similarity };
     }

@@ -3,41 +3,31 @@ from __future__ import annotations
 from io import BytesIO
 from typing import Any
 
-import cv2
 import numpy as np
 import requests
 import torch
+from facenet_pytorch import InceptionResnetV1, MTCNN
 from flask import Flask, jsonify, request
 from PIL import Image
-from torchvision import models, transforms
-
-
-CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 
 app = Flask(__name__)
 
 
-class ResNetFaceEmbedder:
-    def __init__(self) -> None:
-        weights = models.ResNet50_Weights.DEFAULT
-        model = models.resnet50(weights=weights)
+TARGET_EMBEDDING_LENGTH = 2048
+FACE_MODEL_EMBEDDING_LENGTH = 512
 
-        # We remove the classification head and use pooled features as embeddings.
-        self.model = torch.nn.Sequential(*(list(model.children())[:-1]))
+
+class FaceNetEmbedder:
+    def __init__(self) -> None:
+        self.model = InceptionResnetV1(pretrained="vggface2").eval()
         self.model.eval()
-        self.transform = transforms.Compose(
-            [
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406],
-                    std=[0.229, 0.224, 0.225],
-                ),
-            ]
-        )
 
     def embed_face(self, face_image: Image.Image) -> list[float]:
-        tensor = self.transform(face_image.convert("RGB")).unsqueeze(0)
+        resized = face_image.convert("RGB").resize((160, 160))
+        pixels = np.asarray(resized).astype(np.float32) / 255.0
+        tensor = torch.from_numpy(np.transpose(pixels, (2, 0, 1))).unsqueeze(0)
+        tensor = (tensor - 0.5) / 0.5
+
         with torch.no_grad():
             embedding = self.model(tensor).flatten().cpu().numpy().astype(np.float32)
 
@@ -45,11 +35,17 @@ class ResNetFaceEmbedder:
         if norm > 0:
             embedding = embedding / norm
 
-        return embedding.tolist()
+        padded = np.pad(
+            embedding,
+            (0, TARGET_EMBEDDING_LENGTH - FACE_MODEL_EMBEDDING_LENGTH),
+            mode="constant",
+        )
+
+        return padded.tolist()
 
 
-face_detector = cv2.CascadeClassifier(CASCADE_PATH)
-embedder = ResNetFaceEmbedder()
+mtcnn = MTCNN(keep_all=True, device="cpu")
+embedder = FaceNetEmbedder()
 
 
 def load_image(image_url: str | None = None, image_path: str | None = None) -> Image.Image:
@@ -65,19 +61,32 @@ def load_image(image_url: str | None = None, image_path: str | None = None) -> I
 
 
 def detect_faces(image: Image.Image) -> list[dict[str, int]]:
-    bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    faces = face_detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
+    boxes, probabilities = mtcnn.detect(image)
+    if boxes is None:
+        return []
 
-    return [
-        {
-            "x": int(x),
-            "y": int(y),
-            "width": int(w),
-            "height": int(h),
-        }
-        for (x, y, w, h) in faces
-    ]
+    width, height = image.size
+    faces = []
+    for box, probability in zip(boxes, probabilities or []):
+        if probability is None or probability < 0.9:
+            continue
+
+        x1, y1, x2, y2 = box.tolist()
+        x1 = max(0, min(int(x1), width - 1))
+        y1 = max(0, min(int(y1), height - 1))
+        x2 = max(x1 + 1, min(int(x2), width))
+        y2 = max(y1 + 1, min(int(y2), height))
+
+        faces.append(
+            {
+                "x": x1,
+                "y": y1,
+                "width": x2 - x1,
+                "height": y2 - y1,
+            }
+        )
+
+    return faces
 
 
 def to_normalized_box(box: dict[str, int], width: int, height: int) -> dict[str, float]:
@@ -123,13 +132,15 @@ def process_image(payload: dict[str, Any]) -> dict[str, Any]:
 @app.get("/health")
 def health() -> Any:
     return jsonify(
-        {
-            "service": "smart-photo-cloud-ai",
-            "status": "ok",
-            "detector": "opencv-haar",
-            "embeddingModel": "resnet50-backbone",
-        }
-    )
+            {
+                "service": "smart-photo-cloud-ai",
+                "status": "ok",
+                "detector": "mtcnn",
+                "embeddingModel": "facenet-inception-resnet-v1",
+                "storedEmbeddingLength": TARGET_EMBEDDING_LENGTH,
+                "modelEmbeddingLength": FACE_MODEL_EMBEDDING_LENGTH,
+            }
+        )
 
 
 @app.post("/process-photo")

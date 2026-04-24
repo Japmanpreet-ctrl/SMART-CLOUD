@@ -5,7 +5,7 @@ This service now contains the first real implementation of the AI layer describe
 ## What It Does
 
 - Downloads or reads an image
-- Detects faces with OpenCV's Haar cascade
+- Detects faces with MTCNN
 - Crops each detected face
 - Generates a feature embedding with a ResNet backbone from `torchvision`
 
@@ -54,6 +54,6 @@ This gives us a practical ResNet-based embedding pipeline now, while leaving roo
 
 This is a solid first implementation, but it is not yet a face-specialized production model. The next upgrade path would be:
 
-1. better detector such as RetinaFace or MTCNN
-2. stronger face embedding model such as ArcFace
+1. stronger face embedding model such as ArcFace
+2. cluster-level centroid updates instead of single-face representatives
 3. clustering with DBSCAN or cosine-threshold grouping

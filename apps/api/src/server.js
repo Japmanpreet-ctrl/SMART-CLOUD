@@ -9,10 +9,12 @@ import {
   createPhotoRecord,
   deletePhotoForUser,
   listPeopleForUser,
+  listPhotoSourcesForUser,
   listPhotosForCluster,
   listPhotosForUser,
   persistAiFaces,
   renameCluster,
+  resetPeopleAlbumsForUser,
 } from "./services/photos.js";
 import { attachSignedUrlsToPeople, attachSignedUrlsToPhotos } from "./services/storage.js";
 import { getSupabaseAdmin } from "./services/supabase.js";
@@ -220,6 +222,66 @@ app.get("/api/people", async (req, res) => {
     res.json({ people });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: "people_fetch_failed", message: error.message });
+  }
+});
+
+app.post("/api/people/recluster", async (req, res) => {
+  try {
+    const { decoded } = await verifyFirebaseRequest(req);
+    const user = await upsertAppUser({
+      firebaseUid: decoded.uid,
+      email: decoded.email || `${decoded.uid}@firebase.local`,
+      displayName: decoded.name || null,
+    });
+
+    const photos = await listPhotoSourcesForUser(user.id);
+    if (!photos.length) {
+      res.json({
+        processedPhotos: 0,
+        detectedFaces: 0,
+        message: "No photos found for this user.",
+      });
+      return;
+    }
+
+    await resetPeopleAlbumsForUser(user.id);
+
+    const supabase = getSupabaseAdmin();
+    let detectedFaces = 0;
+
+    for (const photo of photos) {
+      const signedDownload = await supabase.storage
+        .from(config.supabaseStorageBucket)
+        .createSignedUrl(photo.storage_key, 60 * 10);
+
+      if (signedDownload.error) {
+        throw signedDownload.error;
+      }
+
+      const aiResult = await processPhotoWithAi({
+        photoId: photo.id,
+        imageUrl: signedDownload.data.signedUrl,
+      });
+
+      const faces = await persistAiFaces({
+        userId: user.id,
+        photoId: photo.id,
+        faces: aiResult.faces || [],
+      });
+
+      detectedFaces += faces.length;
+    }
+
+    res.json({
+      processedPhotos: photos.length,
+      detectedFaces,
+      message: "People albums rebuilt from current photo embeddings.",
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      error: "people_recluster_failed",
+      message: error.message,
+    });
   }
 });
 
