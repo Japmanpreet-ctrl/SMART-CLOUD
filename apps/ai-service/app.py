@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import os
 from typing import Any
 
 import numpy as np
@@ -158,4 +159,8 @@ def process_photo() -> Any:
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=True)
+    app.run(
+        host="127.0.0.1",
+        port=int(os.environ.get("AI_SERVICE_PORT", "8000")),
+        debug=False,
+    )

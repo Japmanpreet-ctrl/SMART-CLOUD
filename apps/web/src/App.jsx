@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -8,9 +8,30 @@ import {
 } from "firebase/auth";
 import { auth } from "./firebase.js";
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:4000";
 const workspaceTabs = ["upload", "gallery", "people"];
 const requestTimeoutMs = 12000;
+const requestRetryCount = 2;
+const serviceHealthPollMs = 15000;
+
+function resolveApiBaseUrl() {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+
+  if (typeof window === "undefined") {
+    return "http://127.0.0.1:4000";
+  }
+
+  const host = window.location.hostname || "127.0.0.1";
+  const portMap = {
+    "5173": "4000",
+    "5174": "4001",
+  };
+
+  return `http://${host}:${portMap[window.location.port] || "4000"}`;
+}
+
+const apiBaseUrl = resolveApiBaseUrl();
 
 function formatAppError(error) {
   const raw = error?.message || String(error || "");
@@ -43,26 +64,45 @@ function formatAppError(error) {
 }
 
 async function parseJson(response) {
-  const payload = await response.json();
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json")
+    ? await response.json()
+    : { message: await response.text() };
+
   if (!response.ok) {
     throw new Error(payload.message || payload.error || "Request failed");
   }
   return payload;
 }
 
-async function fetchJson(url, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return await parseJson(response);
-  } finally {
-    clearTimeout(timeout);
+async function fetchJson(url, options = {}, retries = requestRetryCount) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      return await parseJson(response);
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) {
+        await delay(400 * (attempt + 1));
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+
+  throw lastError;
 }
 
 async function syncSession(user) {
@@ -99,11 +139,43 @@ export default function App() {
   const [peopleLoading, setPeopleLoading] = useState(false);
   const [reclustering, setReclustering] = useState(false);
   const [sessionSyncing, setSessionSyncing] = useState(false);
+  const [serviceHealth, setServiceHealth] = useState(null);
   const [clusterDrafts, setClusterDrafts] = useState({});
   const [selectedClusterPhotos, setSelectedClusterPhotos] = useState([]);
   const [selectedClusterId, setSelectedClusterId] = useState("");
+  const fileInputRef = useRef(null);
+  const apiReady = serviceHealth?.status === "ok";
+
+  async function loadServiceHealth() {
+    try {
+      const payload = await fetchJson(`${apiBaseUrl}/health`, {}, 0);
+      setServiceHealth(payload);
+      return payload;
+    } catch {
+      const fallback = {
+        status: "error",
+        integrations: {
+          database: { ok: false },
+          firebaseAdmin: false,
+          supabaseAdmin: false,
+        },
+      };
+      setServiceHealth(fallback);
+      return fallback;
+    }
+  }
 
   async function syncCurrentUser(user) {
+    const latestHealth = await loadServiceHealth();
+
+    if (latestHealth?.status !== "ok") {
+      setAppUser(null);
+      setSessionToken("");
+      setError("The local API is still starting up. Wait a moment, then retry workspace sync.");
+      setStatus("Firebase sign-in worked, but the workspace is waiting for the backend.");
+      return;
+    }
+
     setSessionSyncing(true);
     setStatus("Syncing your Firebase session with the backend...");
 
@@ -111,9 +183,10 @@ export default function App() {
       const session = await syncSession(user);
       setAppUser(session.appUser);
       setSessionToken(session.firebaseIdToken);
-      setStatus("Signed in and linked to Supabase PostgreSQL.");
+      setStatus("Signed in and linked to the workspace.");
       setError("");
       setActiveTab("upload");
+      await Promise.all([loadGallery(), loadPeople()]);
     } catch (syncError) {
       setAppUser(null);
       setSessionToken("");
@@ -123,6 +196,16 @@ export default function App() {
       setSessionSyncing(false);
     }
   }
+
+  useEffect(() => {
+    void loadServiceHealth();
+
+    const intervalId = setInterval(() => {
+      void loadServiceHealth();
+    }, serviceHealthPollMs);
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -160,6 +243,13 @@ export default function App() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+
+    if (!apiReady && serviceHealth !== null) {
+      setError("The local API is not healthy yet. Wait for API health to turn ok, then try again.");
+      setStatus("Authentication is paused until the backend is ready.");
+      return;
+    }
+
     setError("");
     setStatus(mode === "login" ? "Signing you in..." : "Creating your account...");
 
@@ -379,6 +469,9 @@ export default function App() {
         `Batch finished. ${selectedFiles.length} photo(s) uploaded and ${totalFaces} face(s) processed.`,
       );
       setSelectedFiles([]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       await Promise.all([loadGallery(), loadPeople()]);
       setActiveTab("gallery");
     } catch (uploadError) {
@@ -490,8 +583,16 @@ export default function App() {
                   />
                 </label>
 
-                <button className="primary-button" type="submit">
-                  {mode === "login" ? "Enter Workspace" : "Create Account"}
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={sessionSyncing || (!apiReady && serviceHealth !== null)}
+                >
+                  {sessionSyncing
+                    ? "Syncing Workspace..."
+                    : mode === "login"
+                      ? "Enter Workspace"
+                      : "Create Account"}
                 </button>
               </form>
 
@@ -509,6 +610,10 @@ export default function App() {
                   <p>
                     <span className="label">Workspace link</span>
                     <strong>{appUser?.id || "Awaiting backend sync"}</strong>
+                  </p>
+                  <p>
+                    <span className="label">API health</span>
+                    <strong>{serviceHealth?.status || "Checking..."}</strong>
                   </p>
                   {firebaseUser && !sessionToken ? (
                     <button
@@ -582,6 +687,10 @@ export default function App() {
             <span className="label">Workspace</span>
             <strong>{appUser?.id ? "Backend linked" : "Awaiting session sync"}</strong>
           </div>
+          <div className="mini-stat">
+            <span className="label">API</span>
+            <strong>{serviceHealth?.status || "Checking..."}</strong>
+          </div>
         </div>
       </aside>
 
@@ -633,6 +742,7 @@ export default function App() {
                 <label className="file-picker">
                   <span>Choose photo</span>
                   <input
+                    ref={fileInputRef}
                     type="file"
                     accept="image/*"
                     multiple

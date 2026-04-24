@@ -25,6 +25,8 @@ export const config = {
   firebaseProjectId: required("FIREBASE_PROJECT_ID"),
   firebaseClientEmail: required("FIREBASE_CLIENT_EMAIL"),
   firebasePrivateKey: required("FIREBASE_PRIVATE_KEY").replace(/\\n/g, "\n"),
-  aiServiceUrl: process.env.AI_SERVICE_URL || "http://127.0.0.1:8000",
+  aiServiceUrl:
+    process.env.AI_SERVICE_URL ||
+    `http://127.0.0.1:${Number(process.env.AI_SERVICE_PORT || 8000)}`,
   faceClusterThreshold: Number(process.env.FACE_CLUSTER_THRESHOLD || 0.68),
 };
