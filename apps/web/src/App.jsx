@@ -8,7 +8,7 @@ import {
 } from "firebase/auth";
 import { auth } from "./firebase.js";
 
-const apiBaseUrl = "http://127.0.0.1:4000";
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:4000";
 const workspaceTabs = ["upload", "gallery", "people"];
 const requestTimeoutMs = 12000;
 
