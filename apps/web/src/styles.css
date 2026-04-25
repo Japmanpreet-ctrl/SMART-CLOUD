@@ -442,6 +442,51 @@ input {
   padding: 1rem;
 }
 
+.upload-empty-state,
+.upload-selection-card {
+  border-radius: 22px;
+  border: 1px solid rgba(16, 35, 28, 0.08);
+  background: rgba(242, 246, 242, 0.82);
+  padding: 1rem 1.05rem;
+}
+
+.upload-empty-state strong,
+.upload-selection-header strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.upload-empty-state p {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+}
+
+.upload-selection-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.upload-selection-header span,
+.upload-file-row span {
+  color: var(--muted);
+}
+
+.upload-file-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.upload-file-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
 .auth-help {
   margin-top: 1rem;
   padding: 0.9rem 1rem;
@@ -495,7 +540,7 @@ input {
 .person-body {
   padding: 0.9rem 1rem 1rem;
   display: grid;
-  gap: 0.2rem;
+  gap: 0.45rem;
 }
 
 .gallery-card-body span,
@@ -561,6 +606,56 @@ input {
   padding: 1rem;
   background: rgba(238, 243, 239, 0.9);
   color: var(--muted);
+}
+
+.image-viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 18, 15, 0.58);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 50;
+}
+
+.image-viewer-modal {
+  width: min(980px, 100%);
+  max-height: calc(100vh - 3rem);
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(252, 250, 245, 0.96);
+  box-shadow: 0 24px 80px rgba(8, 22, 17, 0.24);
+  display: grid;
+  gap: 1rem;
+  padding: 1.1rem;
+}
+
+.image-viewer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.image-viewer-header h3 {
+  margin: 0;
+}
+
+.image-viewer-frame {
+  border-radius: 22px;
+  overflow: hidden;
+  background: linear-gradient(145deg, #dae4dc, #eef3ef);
+  max-height: calc(100vh - 12rem);
+}
+
+.image-viewer-frame img {
+  display: block;
+  width: 100%;
+  max-height: calc(100vh - 12rem);
+  object-fit: contain;
+  background: #eef3ef;
 }
 
 @media (max-width: 1080px) {

@@ -47,6 +47,38 @@ function requireNoError(error) {
   if (error) throw error;
 }
 
+async function deleteEmptyClusters(userId) {
+  const supabase = getSupabaseAdmin();
+  const { data: clusters, error: clusterError } = await supabase
+    .from("person_cluster")
+    .select("id")
+    .eq("user_id", userId);
+
+  requireNoError(clusterError);
+  if (!clusters?.length) return;
+
+  const clusterIds = clusters.map((cluster) => cluster.id);
+  const { data: faces, error: faceError } = await supabase
+    .from("face")
+    .select("cluster_id")
+    .in("cluster_id", clusterIds);
+
+  requireNoError(faceError);
+
+  const nonEmptyClusterIds = new Set((faces || []).map((face) => face.cluster_id).filter(Boolean));
+  const emptyClusterIds = clusterIds.filter((clusterId) => !nonEmptyClusterIds.has(clusterId));
+
+  if (!emptyClusterIds.length) return;
+
+  const { error: deleteError } = await supabase
+    .from("person_cluster")
+    .delete()
+    .in("id", emptyClusterIds)
+    .eq("user_id", userId);
+
+  requireNoError(deleteError);
+}
+
 export async function createPhotoRecord({
   userId,
   objectPath,
@@ -101,6 +133,8 @@ export async function listPhotoSourcesForUser(userId) {
 }
 
 export async function listPeopleForUser(userId) {
+  await deleteEmptyClusters(userId);
+
   const supabase = getSupabaseAdmin();
   const { data: clusters, error: clusterError } = await supabase
     .from("person_cluster")
@@ -145,7 +179,8 @@ export async function listPeopleForUser(userId) {
     photoById = new Map((photos || []).map((photo) => [photo.id, photo]));
   }
 
-  return clusters.map((cluster) => {
+  return clusters
+    .map((cluster) => {
     const representativeFace = faceById.get(cluster.representative_face_id);
     const representativePhoto = representativeFace ? photoById.get(representativeFace.photo_id) : null;
 
@@ -158,7 +193,8 @@ export async function listPeopleForUser(userId) {
       representative_photo_url: representativePhoto?.file_url || null,
       representative_thumbnail_url: representativePhoto?.thumbnail_url || null,
     };
-  });
+    })
+    .filter((cluster) => cluster.face_count > 0);
 }
 
 export async function listPhotosForCluster(userId, clusterId) {
@@ -228,6 +264,7 @@ export async function deletePhotoForUser(userId, photoId) {
     .eq("id", photoId);
 
   requireNoError(error);
+  await deleteEmptyClusters(userId);
   return existing;
 }
 

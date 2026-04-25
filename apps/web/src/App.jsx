@@ -143,6 +143,7 @@ export default function App() {
   const [clusterDrafts, setClusterDrafts] = useState({});
   const [selectedClusterPhotos, setSelectedClusterPhotos] = useState([]);
   const [selectedClusterId, setSelectedClusterId] = useState("");
+  const [viewerPhoto, setViewerPhoto] = useState(null);
   const fileInputRef = useRef(null);
   const apiReady = serviceHealth?.status === "ok";
 
@@ -481,6 +482,14 @@ export default function App() {
     }
   }
 
+  function openImageViewer(photo) {
+    setViewerPhoto(photo);
+  }
+
+  function closeImageViewer() {
+    setViewerPhoto(null);
+  }
+
   const isAuthenticated = Boolean(firebaseUser && sessionToken);
 
   if (!isAuthenticated) {
@@ -705,8 +714,32 @@ export default function App() {
                 <button className="primary-button" type="submit" disabled={!isAuthenticated || uploading}>
                   {uploading ? "Processing..." : "Upload Batch"}
                 </button>
-                <br/>
               </form>
+
+              {selectedFiles.length ? (
+                <div className="upload-selection-card">
+                  <div className="upload-selection-header">
+                    <strong>Selected for this batch</strong>
+                    <span>{selectedFiles.length} file(s)</span>
+                  </div>
+                  <div className="upload-file-list">
+                    {selectedFiles.map((file) => (
+                      <div className="upload-file-row" key={`${file.name}-${file.size}`}>
+                        <span>{file.name}</span>
+                        <strong>{Math.max(1, Math.round(file.size / 1024))} KB</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="upload-empty-state">
+                  <strong>No photos selected yet</strong>
+                  <p>
+                    Pick a small batch of images and the workspace will upload, process,
+                    cluster, and place them into people albums automatically.
+                  </p>
+                </div>
+              )}
 
               <div className="banner neutral">{uploadMessage}</div>
             </article>
@@ -737,6 +770,13 @@ export default function App() {
                     <div className="gallery-card-body">
                       <strong>{photo.file_type || "image"}</strong>
                       <span>{photo.upload_status}</span>
+                      <button
+                        className="secondary-button compact-button"
+                        onClick={() => openImageViewer(photo)}
+                        type="button"
+                      >
+                        View Image
+                      </button>
                       <button
                         className="secondary-button compact-button"
                         onClick={() => void handleDeletePhoto(photo.id)}
@@ -822,6 +862,22 @@ export default function App() {
                           >
                             View Photos
                           </button>
+                          {(person.representative_photo_url || person.representative_thumbnail_url) ? (
+                            <button
+                              className="secondary-button compact-button"
+                              onClick={() =>
+                                openImageViewer({
+                                  id: person.id,
+                                  file_url: person.representative_photo_url || person.representative_thumbnail_url,
+                                  thumbnail_url: person.representative_thumbnail_url,
+                                  file_type: person.display_name || "Person photo",
+                                })
+                              }
+                              type="button"
+                            >
+                              Open Image
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -860,6 +916,13 @@ export default function App() {
                         </div>
                         <div className="gallery-card-body">
                           <strong>{photo.file_type || "image"}</strong>
+                          <button
+                            className="secondary-button compact-button"
+                            onClick={() => openImageViewer(photo)}
+                            type="button"
+                          >
+                            View Image
+                          </button>
                         </div>
                       </article>
                     ))
@@ -872,6 +935,33 @@ export default function App() {
           </section>
         ) : null}
       </section>
+
+      {viewerPhoto ? (
+        <div className="image-viewer-backdrop" onClick={closeImageViewer} role="presentation">
+          <div
+            className="image-viewer-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="image-viewer-header">
+              <div>
+                <p className="section-kicker">Preview</p>
+                <h3>{viewerPhoto.file_type || "Image"}</h3>
+              </div>
+              <button className="secondary-button" onClick={closeImageViewer} type="button">
+                Close
+              </button>
+            </div>
+            <div className="image-viewer-frame">
+              <img
+                src={viewerPhoto.file_url || viewerPhoto.thumbnail_url}
+                alt={viewerPhoto.storage_key || viewerPhoto.id || "Image preview"}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
